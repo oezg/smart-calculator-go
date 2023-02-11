@@ -13,7 +13,8 @@ import (
 
 const (
 	UNKNOWN = "Unknown variable"
-	INVALID = "Invalid"
+	INVALID = "Invalid "
+	EMPTY   = "empty expression"
 	HELP    = `Smart calculator can save values to variables
 and calculate the value of arithmetic expressions.
 The supported operations are assignment '=', parenthesis '()', addition '+', 
@@ -73,59 +74,126 @@ func handleCommand(text string) {
 }
 
 func handleAssignment(text string) {
-	if strings.Contains(text, "=") {
-		assignmentSides := strings.SplitN(text, "=", 2)
-		assignee := strings.TrimSpace(assignmentSides[0])
-		assigned := strings.TrimSpace(assignmentSides[1])
-		if !isIdentifier(assignee) {
-			fmt.Println("Invalid identifier")
-		} else {
-			expression, err := makeExpression(assigned)
-			if err != nil {
-				message := err.Error()
-				if message == INVALID {
-					message += " assignment"
-				}
-				fmt.Println(message)
-			} else {
-				memory[Identifier(assignee)], err = expression.Evaluate()
-				if err != nil {
-					message := err.Error()
-					if message == INVALID {
-						message += " assignment"
-					}
-					fmt.Println(message)
-				}
-			}
-		}
-	} else {
+	if !strings.Contains(text, "=") {
 		handleExpression(text)
+		return
+	}
+	assignmentSides := strings.SplitN(text, "=", 2)
+	assignee := strings.TrimSpace(assignmentSides[0])
+	assigned := strings.TrimSpace(assignmentSides[1])
+	if !isIdentifier(assignee) {
+		fmt.Println("Invalid identifier")
+		return
+	}
+	if result, err := evaluateExpression(assigned); err == nil {
+		memory[Identifier(assignee)] = result
+	} else {
+		must(err, "assignment")
 	}
 }
 
 func handleExpression(text string) {
-	expression, err := makeExpression(text)
-	if err != nil {
-		message := err.Error()
-		if message == INVALID {
-			message += " expression"
-		}
-		fmt.Println(message)
-	} else if !IsEmpty(expression) {
-		result, err := expression.Evaluate()
-		if err != nil {
-			message := err.Error()
-			if message == INVALID {
-				message += " expression"
-			}
-			fmt.Println(message)
-		} else {
-			fmt.Println(result)
-		}
+	text = strings.TrimSpace(text)
+	if result, err := evaluateExpression(text); err == nil {
+		fmt.Println(result)
+	} else {
+		must(err, "expression")
 	}
 }
 
-func (operator Operator) Operate(value1, value2 Value) (result Value, err error) {
+func evaluateExpression(text string) (value Value, err error) {
+	var expression Expression
+	if expression, err = makeExpression(text); err != nil {
+		return
+	}
+	value, err = expression.Evaluate()
+	return
+}
+
+func makeExpression(text string) (expression Expression, err error) {
+	if 0 == len(text) {
+		err = errors.New(EMPTY)
+		return
+	}
+	reader := strings.NewReader(text)
+	scanner := bufio.NewScanner(reader)
+	scanner.Split(bufio.ScanRunes)
+	var stack OperatorStack
+	var currentTerm, lastTerm RawTerm
+	var term Term
+	for scanner.Scan() {
+		currentTerm.Close(lastTerm, scanner.Text())
+		if currentTerm.closed {
+			if term, err = validate(currentTerm); err != nil {
+				return
+			}
+			if stack, err = expression.Grow(stack, term); err != nil {
+				return
+			}
+			lastTerm, currentTerm = currentTerm, RawTerm{}
+		}
+		if err = currentTerm.Extend(scanner.Text()); err != nil {
+			return
+		}
+	}
+	if term, err = validate(currentTerm); err != nil {
+		return
+	}
+	if stack, err = expression.Grow(stack, term); err != nil {
+		return
+	}
+	for !IsEmpty(stack) {
+		var operator Operator
+		stack, operator = Pop(stack)
+		expression.Add(Term{Operator: operator, IsOperator: true})
+	}
+	return
+}
+
+func (expression *Expression) Evaluate() (value Value, err error) {
+	if IsEmpty(*expression) {
+		err = errors.New(EMPTY)
+		return
+	}
+	var stack ValueStack
+	var value1, value2, result Value
+	for _, term := range *expression {
+		if !term.IsOperator {
+			stack = Push(stack, term.Value)
+			continue
+		}
+		stack, value1 = Pop(stack)
+		stack, value2 = Pop(stack)
+		if stack == nil {
+			err = errors.New(INVALID)
+		}
+		result = term.Operator.Operate(value2, value1)
+		stack = Push(stack, result)
+	}
+	value = Peek(stack)
+	return
+}
+
+func (expression *Expression) Add(terms ...Term) {
+	for _, term := range terms {
+		*expression = Push(*expression, term)
+	}
+}
+
+func (expression *Expression) Grow(stack OperatorStack, term Term) (OperatorStack, error) {
+	if term.IsOperator {
+		poppedOperators, err := stack.Update(term.Operator)
+		if err != nil {
+			return nil, err
+		}
+		expression.Add(poppedOperators...)
+	} else {
+		expression.Add(term)
+	}
+	return stack, nil
+}
+
+func (operator Operator) Operate(value1, value2 Value) (result Value) {
 	switch operator {
 	case "+":
 		result = value1 + value2
@@ -139,71 +207,33 @@ func (operator Operator) Operate(value1, value2 Value) (result Value, err error)
 		result = value1 % value2
 	case "^":
 		result = Value(math.Pow(float64(value1), float64(value2)))
-	default:
-		err = errors.New(INVALID)
 	}
 	return
 }
 
-func (expression *Expression) Add(terms ...Term) {
-	for _, term := range terms {
-		*expression = Push(*expression, term)
-	}
-}
-
-func (expression *Expression) Evaluate() (Value, error) {
-	var stack ValueStack
-	for _, term := range *expression {
-		if term.IsOperator {
-			tempStack, value1 := Pop(stack)
-			stack = tempStack
-			if stack == nil {
-				return 0, errors.New(INVALID)
-			}
-			tempStack, value2 := Pop(stack)
-			stack = tempStack
-			if stack == nil {
-				return 0, errors.New(INVALID)
-			}
-			if result, err := term.Operator.Operate(value2, value1); err == nil {
-				stack = Push(stack, result)
-			} else {
-				return 0, err
-			}
-		} else {
-			stack = Push(stack, term.Value)
-		}
-	}
-	return Peek(stack), nil
-}
-
-func (expression *Expression) Grow(stack OperatorStack, term RawTerm) (OperatorStack, error) {
+func validate(term RawTerm) (validated Term, err error) {
 	if term.isOperator {
 		if operator, ok := isOperator(term.Text); ok {
-			poppedOperators, err := stack.Update(operator)
-			if err != nil {
-				return nil, errors.New(INVALID)
-			}
-			expression.Add(poppedOperators...)
+			validated = Term{Operator: operator, IsOperator: true}
 		} else {
-			return nil, errors.New(INVALID)
+			err = errors.New(INVALID)
 		}
 	} else if term.isValue {
 		if value, ok := isNumber(term.Text); ok {
-			expression.Add(Term{Value: value})
+			validated = Term{Value: value}
 		} else {
-			return nil, errors.New(INVALID)
+			err = errors.New(INVALID)
 		}
 	} else if term.isIdentifier {
 		if value, ok := memory[Identifier(term.Text)]; ok {
-			expression.Add(Term{Value: value})
+			validated = Term{Value: value}
 		} else if isIdentifier(term.Text) {
-			return nil, errors.New(UNKNOWN)
+			err = errors.New(UNKNOWN)
 		} else {
-			return nil, errors.New(INVALID)
+			err = errors.New(INVALID)
 		}
 	}
-	return stack, nil
+	return
 }
 
 func Precedence(operator Operator) (precedence int8) {
@@ -326,35 +356,6 @@ func (term *RawTerm) Extend(char string) (err error) {
 	return
 }
 
-func makeExpression(text string) (expression Expression, err error) {
-	reader := strings.NewReader(text)
-	scanner := bufio.NewScanner(reader)
-	scanner.Split(bufio.ScanRunes)
-	var stack OperatorStack
-	var currentTerm, lastTerm RawTerm
-	for scanner.Scan() {
-		currentTerm.Close(lastTerm, scanner.Text())
-		if currentTerm.closed {
-			if stack, err = expression.Grow(stack, currentTerm); err != nil {
-				return
-			}
-			lastTerm, currentTerm = currentTerm, RawTerm{}
-		}
-		if err = currentTerm.Extend(scanner.Text()); err != nil {
-			return
-		}
-	}
-	if stack, err = expression.Grow(stack, currentTerm); err != nil {
-		return
-	}
-	for !IsEmpty(stack) {
-		var operator Operator
-		stack, operator = Pop(stack)
-		expression.Add(Term{Operator: operator, IsOperator: true})
-	}
-	return
-}
-
 func isNumber(text string) (Value, bool) {
 	number, err := strconv.Atoi(text)
 	if err != nil {
@@ -399,4 +400,17 @@ func plusMinus(text string) (string, error) {
 		return "-", nil
 	}
 	return "+", nil
+}
+
+func must(err error, statement string) {
+	if err.Error() != EMPTY {
+		printError(err.Error(), statement)
+	}
+}
+
+func printError(message, statement string) {
+	if message == INVALID {
+		message += statement
+	}
+	fmt.Println(message)
 }
