@@ -45,8 +45,8 @@ type Term struct {
 }
 
 type RawTerm struct {
-	isIdentifier, isValue, isOperator bool
-	Text                              string
+	isIdentifier, isValue, isOperator, closed bool
+	Text                                      string
 }
 
 func main() {
@@ -178,7 +178,6 @@ func (expression *Expression) Evaluate() (Value, error) {
 }
 
 func (expression *Expression) Grow(stack OperatorStack, term RawTerm) (OperatorStack, error) {
-
 	if term.isOperator {
 		if operator, ok := isOperator(term.Text); ok {
 			poppedOperators, err := stack.Update(operator)
@@ -259,56 +258,53 @@ func (stack *OperatorStack) Update(operator Operator) (operators []Term, err err
 				operators = Push(operators, Term{Operator: topOfStack, IsOperator: true})
 			}
 		}
-		return nil, errors.New(INVALID)
+		err = errors.New(INVALID)
+		return
 	}
 	if Precedence(Peek(*stack)) < Precedence(operator) {
 		*stack = Push(*stack, operator)
-		return operators, nil
+		return
 	}
-	for 0 < len(*stack) {
+	for !IsEmpty(*stack) {
 		topOfStack := Peek(*stack)
 		if "(" == topOfStack || Precedence(topOfStack) < Precedence(operator) {
 			*stack = Push(*stack, operator)
-			return operators, nil
+			return
 		} else {
 			*stack, topOfStack = Pop(*stack)
 			operators = append(operators, Term{Operator: topOfStack, IsOperator: true})
 		}
 	}
 	*stack = Push(*stack, operator)
-	return operators, nil
-}
-
-func (term *RawTerm) IsFinished(last RawTerm, char string) (finished bool) {
-	switch {
-	case " " == char:
-		finished = true
-	case term.isValue:
-		_, ok := isNumber(char)
-		finished = !ok
-	case term.isOperator:
-		_, ok := isNumber(char)
-		if ok && (term.Text == "+" || term.Text == "-") {
-			finished = last.isIdentifier || last.isValue
-		} else if strings.HasSuffix(term.Text, "+") || strings.HasSuffix(term.Text, "-") {
-			finished = !(char == "+" || char == "-")
-		} else {
-			finished = true
-		}
-	case term.isIdentifier:
-		finished = !isIdentifier(char)
-	}
 	return
 }
 
-func (term *RawTerm) Extend(char string) bool {
+func (term *RawTerm) Close(last RawTerm, char string) {
 	switch {
+	case " " == char:
+		term.closed = true
 	case term.isValue:
-		if _, ok := isNumber(char); ok {
-			term.Text += char
+		_, ok := isNumber(char)
+		term.closed = !ok
+	case term.isOperator:
+		_, ok := isNumber(char)
+		if ok && (term.Text == "+" || term.Text == "-") {
+			term.closed = last.isIdentifier || last.isValue
+		} else if strings.HasSuffix(term.Text, "+") || strings.HasSuffix(term.Text, "-") {
+			term.closed = !(char == "+" || char == "-")
 		} else {
-			return false
+			term.closed = true
 		}
+	case term.isIdentifier:
+		term.closed = !isIdentifier(char)
+	}
+}
+
+func (term *RawTerm) Extend(char string) error {
+	switch {
+	case " " == char:
+	case term.isValue:
+		term.Text += char
 	case term.isOperator:
 		if _, ok := isNumber(char); ok {
 			term.isOperator = false
@@ -318,9 +314,7 @@ func (term *RawTerm) Extend(char string) bool {
 	case term.isIdentifier:
 		term.Text += char
 	default:
-		if " " == char {
-
-		} else if _, ok := isNumber(char); ok {
+		if _, ok := isNumber(char); ok {
 			term.isValue = true
 			term.Text = char
 		} else if _, ok = isOperator(char); ok {
@@ -330,43 +324,33 @@ func (term *RawTerm) Extend(char string) bool {
 			term.isIdentifier = true
 			term.Text = char
 		} else {
-			return false
+			return errors.New(INVALID)
 		}
 	}
-	return true
+	return nil
 }
 
-func makeExpression(text string) (Expression, error) {
+func makeExpression(text string) (expression Expression, err error) {
 	reader := strings.NewReader(text)
 	scanner := bufio.NewScanner(reader)
 	scanner.Split(bufio.ScanRunes)
-	expression := Expression{}
 	var stack OperatorStack
-	var rawTerm RawTerm
-	var lastNonemptyRawTerm RawTerm
+	var currentTerm, lastTerm RawTerm
 	for scanner.Scan() {
-		if rawTerm.IsFinished(lastNonemptyRawTerm, scanner.Text()) {
-			if tempStack, err := expression.Grow(stack, rawTerm); err == nil {
-				stack = tempStack
-			} else {
-				return expression, err
+		currentTerm.Close(lastTerm, scanner.Text())
+		if currentTerm.closed {
+			if stack, err = expression.Grow(stack, currentTerm); err != nil {
+				return
 			}
-			if rawTerm.isIdentifier || rawTerm.isValue || rawTerm.isOperator {
-				lastNonemptyRawTerm = rawTerm
-			}
-			rawTerm = RawTerm{}
+			lastTerm, currentTerm = currentTerm, RawTerm{}
 		}
-		if ok := rawTerm.Extend(scanner.Text()); !ok {
-			return Expression{}, errors.New(INVALID)
+		if err = currentTerm.Extend(scanner.Text()); err != nil {
+			return
 		}
 	}
-
-	if tempStack, err := expression.Grow(stack, rawTerm); err == nil {
-		stack = tempStack
-	} else {
-		return expression, err
+	if stack, err = expression.Grow(stack, currentTerm); err != nil {
+		return
 	}
-
 	for !IsEmpty(stack) {
 		tempStack, operator := Pop(stack)
 		stack = tempStack
@@ -375,8 +359,7 @@ func makeExpression(text string) (Expression, error) {
 			IsOperator: true,
 		})
 	}
-
-	return expression, nil
+	return
 }
 
 func isNumber(text string) (Value, bool) {
