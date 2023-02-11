@@ -300,34 +300,30 @@ func (term *RawTerm) Close(last RawTerm, char string) {
 	}
 }
 
-func (term *RawTerm) Extend(char string) error {
+func (term *RawTerm) Extend(char string) (err error) {
 	switch {
 	case " " == char:
+		return
 	case term.isValue:
-		term.Text += char
 	case term.isOperator:
 		if _, ok := isNumber(char); ok {
 			term.isOperator = false
 			term.isValue = true
 		}
-		term.Text += char
 	case term.isIdentifier:
-		term.Text += char
 	default:
 		if _, ok := isNumber(char); ok {
 			term.isValue = true
-			term.Text = char
 		} else if _, ok = isOperator(char); ok {
 			term.isOperator = true
-			term.Text = char
 		} else if isIdentifier(char) {
 			term.isIdentifier = true
-			term.Text = char
 		} else {
-			return errors.New(INVALID)
+			err = errors.New(INVALID)
 		}
 	}
-	return nil
+	term.Text += char
+	return
 }
 
 func makeExpression(text string) (expression Expression, err error) {
@@ -352,12 +348,9 @@ func makeExpression(text string) (expression Expression, err error) {
 		return
 	}
 	for !IsEmpty(stack) {
-		tempStack, operator := Pop(stack)
-		stack = tempStack
-		expression.Add(Term{
-			Operator:   operator,
-			IsOperator: true,
-		})
+		var operator Operator
+		stack, operator = Pop(stack)
+		expression.Add(Term{Operator: operator, IsOperator: true})
 	}
 	return
 }
