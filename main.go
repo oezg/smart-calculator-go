@@ -27,17 +27,14 @@ Type "/exit" to end the program`
 
 var memory = make(map[Identifier]Value)
 
-type Identifier string
-
-type Value int
-
-type ValueStack []Value
-
-type Operator string
-
-type OperatorStack []Operator
-
-type Expression []Term
+type (
+	Identifier    string
+	Value         int
+	Operator      string
+	ValueStack    []Value
+	OperatorStack []Operator
+	Expression    []Term
+)
 
 type Term struct {
 	Value      Value
