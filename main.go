@@ -36,137 +36,17 @@ type Operator string
 
 type OperatorStack []Operator
 
+type Expression []Term
+
 type Term struct {
 	Value      Value
 	IsOperator bool
 	Operator   Operator
 }
 
-type Expression struct {
-	Terms []Term
-}
-
-func (operator Operator) Operate(value1, value2 Value) (result Value, err error) {
-	switch operator {
-	case "+":
-		result = value1 + value2
-	case "-":
-		result = value1 - value2
-	case "*":
-		result = value1 * value2
-	case "/":
-		result = value1 / value2
-	case "%":
-		result = value1 % value2
-	case "^":
-		result = Value(math.Pow(float64(value1), float64(value2)))
-	default:
-		err = errors.New(INVALID)
-	}
-	return
-}
-
-func (expression *Expression) IsEmpty() bool {
-	return len(expression.Terms) == 0
-}
-
-func (expression *Expression) Evaluate() (Value, error) {
-	var stack ValueStack
-	for _, term := range expression.Terms {
-		if term.IsOperator {
-			tempStack, value1 := Pop(stack)
-			stack = tempStack
-			if stack == nil {
-				return 0, errors.New(INVALID)
-			}
-			tempStack, value2 := Pop(stack)
-			stack = tempStack
-			if stack == nil {
-				return 0, errors.New(INVALID)
-			}
-			if result, err := term.Operator.Operate(value2, value1); err == nil {
-				stack = Push(stack, result)
-			} else {
-				return 0, err
-			}
-		} else {
-			stack = Push(stack, term.Value)
-		}
-	}
-	return Peek(stack), nil
-}
-
-func (expression *Expression) Add(terms ...Term) {
-	for _, term := range terms {
-		expression.Terms = Push(expression.Terms, term)
-	}
-}
-
-func Precedence(operator Operator) (precedence int8) {
-	switch operator {
-	case "+", "-":
-		precedence = 1
-	case "*", "/":
-		precedence = 2
-	case "^":
-		precedence = 3
-	}
-	return
-}
-
-func Peek[T comparable](stack []T) T {
-	var t T
-	if len(stack) == 0 {
-		return t
-	}
-	return stack[len(stack)-1]
-}
-
-func Push[T comparable](stack []T, element T) []T {
-	return append(stack, element)
-}
-
-func Pop[T comparable](stack []T) ([]T, T) {
-	if 0 == len(stack) {
-		var t T
-		return nil, t
-	}
-	last := len(stack) - 1
-	return stack[:last], stack[last]
-}
-
-func Update(stack OperatorStack, operator Operator) (OperatorStack, []Term, error) {
-	var poppedOperators []Term
-	if 0 == len(stack) || "(" == operator || "(" == Peek(stack) {
-		return Push(stack, operator), poppedOperators, nil
-	}
-	if ")" == operator {
-		for len(stack) > 0 {
-			tempStack, topOfStack := Pop(stack)
-			stack = tempStack
-			if "(" == topOfStack {
-				return stack, poppedOperators, nil
-			} else {
-				poppedOperators = append(poppedOperators, Term{Operator: topOfStack, IsOperator: true})
-			}
-		}
-		return nil, nil, errors.New(INVALID)
-	}
-	if Precedence(Peek(stack)) < Precedence(operator) {
-		return Push(stack, operator), poppedOperators, nil
-	}
-	for 0 < len(stack) {
-		topOfStack := Peek(stack)
-		if Precedence(topOfStack) < Precedence(operator) {
-			return Push(stack, operator), poppedOperators, nil
-		} else if topOfStack == "(" {
-			return Push(stack, operator), poppedOperators, nil
-		} else {
-			stack, topOfStack = Pop(stack)
-			poppedOperators = append(poppedOperators, Term{Operator: topOfStack, IsOperator: true})
-		}
-	}
-	return Push(stack, operator), poppedOperators, nil
+type RawTerm struct {
+	isIdentifier, isValue, isOperator bool
+	Text                              string
 }
 
 func main() {
@@ -231,7 +111,7 @@ func handleExpression(text string) {
 			message += " expression"
 		}
 		fmt.Println(message)
-	} else if !expression.IsEmpty() {
+	} else if !IsEmpty(expression) {
 		result, err := expression.Evaluate()
 		if err != nil {
 			message := err.Error()
@@ -245,9 +125,129 @@ func handleExpression(text string) {
 	}
 }
 
-type RawTerm struct {
-	isIdentifier, isValue, isOperator bool
-	Text                              string
+func (operator Operator) Operate(value1, value2 Value) (result Value, err error) {
+	switch operator {
+	case "+":
+		result = value1 + value2
+	case "-":
+		result = value1 - value2
+	case "*":
+		result = value1 * value2
+	case "/":
+		result = value1 / value2
+	case "%":
+		result = value1 % value2
+	case "^":
+		result = Value(math.Pow(float64(value1), float64(value2)))
+	default:
+		err = errors.New(INVALID)
+	}
+	return
+}
+
+func IsEmpty[T comparable](list []T) bool {
+	return len(list) == 0
+}
+
+func (expression *Expression) Evaluate() (Value, error) {
+	var stack ValueStack
+	for _, term := range *expression {
+		if term.IsOperator {
+			tempStack, value1 := Pop(stack)
+			stack = tempStack
+			if stack == nil {
+				return 0, errors.New(INVALID)
+			}
+			tempStack, value2 := Pop(stack)
+			stack = tempStack
+			if stack == nil {
+				return 0, errors.New(INVALID)
+			}
+			if result, err := term.Operator.Operate(value2, value1); err == nil {
+				stack = Push(stack, result)
+			} else {
+				return 0, err
+			}
+		} else {
+			stack = Push(stack, term.Value)
+		}
+	}
+	return Peek(stack), nil
+}
+
+func (expression *Expression) Add(terms ...Term) {
+	for _, term := range terms {
+		*expression = Push(*expression, term)
+	}
+}
+
+func Precedence(operator Operator) (precedence int8) {
+	switch operator {
+	case "+", "-":
+		precedence = 1
+	case "*", "/", "%":
+		precedence = 2
+	case "^":
+		precedence = 3
+	}
+	return
+}
+
+func Peek[T comparable](stack []T) T {
+	var t T
+	if len(stack) == 0 {
+		return t
+	}
+	return stack[len(stack)-1]
+}
+
+func Push[T comparable](stack []T, element T) []T {
+	return append(stack, element)
+}
+
+func Pop[T comparable](stack []T) ([]T, T) {
+	if 0 == len(stack) {
+		var t T
+		return nil, t
+	}
+	last := len(stack) - 1
+	return stack[:last], stack[last]
+}
+
+func (stack *OperatorStack) Update(operator Operator) ([]Term, error) {
+	var poppedOperators []Term
+	if 0 == len(*stack) || "(" == operator || "(" == Peek(*stack) {
+		*stack = Push(*stack, operator)
+		return poppedOperators, nil
+	}
+	if ")" == operator {
+		for len(*stack) > 0 {
+			tempStack, topOfStack := Pop(*stack)
+			*stack = tempStack
+			if "(" == topOfStack {
+				return poppedOperators, nil
+			} else {
+				poppedOperators = append(poppedOperators, Term{Operator: topOfStack, IsOperator: true})
+			}
+		}
+		return nil, errors.New(INVALID)
+	}
+	if Precedence(Peek(*stack)) < Precedence(operator) {
+		*stack = Push(*stack, operator)
+		return poppedOperators, nil
+	}
+	for 0 < len(*stack) {
+		topOfStack := Peek(*stack)
+		if "(" == topOfStack || Precedence(topOfStack) < Precedence(operator) {
+			*stack = Push(*stack, operator)
+			return poppedOperators, nil
+		} else {
+			*stack, topOfStack = Pop(*stack)
+			poppedOperators = append(poppedOperators, Term{Operator: topOfStack, IsOperator: true})
+		}
+	}
+	*stack = Push(*stack, operator)
+	return poppedOperators, nil
 }
 
 func isFinished(last, term RawTerm, char string) (finished bool) {
@@ -310,11 +310,10 @@ func extend(term RawTerm, char string) (RawTerm, error) {
 func grow(expression Expression, stack OperatorStack, term RawTerm) (Expression, OperatorStack, error) {
 	if term.isOperator {
 		if operator, ok := isOperator(term.Text); ok {
-			tempStack, poppedOperators, err := Update(stack, operator)
+			poppedOperators, err := stack.Update(operator)
 			if err != nil {
 				return Expression{}, nil, errors.New(INVALID)
 			}
-			stack = tempStack
 			expression.Add(poppedOperators...)
 		} else {
 			return Expression{}, nil, errors.New(INVALID)
@@ -424,7 +423,6 @@ func plusMinus(text string) (string, error) {
 			return "", errors.New(INVALID)
 		}
 	}
-
 	if negative {
 		return "-", nil
 	}
