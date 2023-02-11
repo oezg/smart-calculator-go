@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
-	"log"
 	"math"
 	"os"
 	"strconv"
@@ -15,9 +14,13 @@ import (
 const (
 	UNKNOWN = "Unknown variable"
 	INVALID = "Invalid"
-	HELP    = `The program calculates the result of the arithmetic expression
-The program can calculate addition or subtraction
-The program saves values to variables using "=" operator
+	HELP    = `Smart calculator can save values to variables
+and calculate the value of arithmetic expressions.
+The supported operations are assignment '=', parenthesis '()', addition '+', 
+subtraction '-', multiplication '*', integer division '/', 
+modulo '%' and exponent '^'. 
+Variable names can only have Latin characters but no digits or special characters.
+Smart calculator works only with integers and not with floating point numbers.
 Type "/exit" to end the program`
 )
 
@@ -43,7 +46,7 @@ type Expression struct {
 	Terms []Term
 }
 
-func (operator Operator) Operate(value1, value2 Value) (result Value) {
+func (operator Operator) Operate(value1, value2 Value) (result Value, err error) {
 	switch operator {
 	case "+":
 		result = value1 + value2
@@ -58,7 +61,7 @@ func (operator Operator) Operate(value1, value2 Value) (result Value) {
 	case "^":
 		result = Value(math.Pow(float64(value1), float64(value2)))
 	default:
-		log.Fatal(operator, "is not an operator")
+		err = errors.New(INVALID)
 	}
 	return
 }
@@ -67,28 +70,30 @@ func (expression *Expression) IsEmpty() bool {
 	return len(expression.Terms) == 0
 }
 
-func (expression *Expression) Evaluate() Value {
+func (expression *Expression) Evaluate() (Value, error) {
 	var stack ValueStack
 	for _, term := range expression.Terms {
 		if term.IsOperator {
 			tempStack, value1 := Pop(stack)
 			stack = tempStack
 			if stack == nil {
-				log.Fatal("Operator has no operands")
+				return 0, errors.New(INVALID)
 			}
 			tempStack, value2 := Pop(stack)
 			stack = tempStack
 			if stack == nil {
-				log.Fatal("Operator has one operand")
+				return 0, errors.New(INVALID)
 			}
-			result := term.Operator.Operate(value1, value2)
-			stack = Push(stack, result)
+			if result, err := term.Operator.Operate(value2, value1); err == nil {
+				stack = Push(stack, result)
+			} else {
+				return 0, err
+			}
 		} else {
 			stack = Push(stack, term.Value)
 		}
 	}
-	stack, result := Pop(stack)
-	return result
+	return Peek(stack), nil
 }
 
 func (expression *Expression) Add(terms ...Term) {
@@ -99,16 +104,12 @@ func (expression *Expression) Add(terms ...Term) {
 
 func Precedence(operator Operator) (precedence int8) {
 	switch operator {
-	case "(":
-		precedence = 0
 	case "+", "-":
 		precedence = 1
 	case "*", "/":
 		precedence = 2
 	case "^":
 		precedence = 3
-	default:
-		log.Fatal(operator, "has not attribute precedence")
 	}
 	return
 }
@@ -126,7 +127,7 @@ func Push[T comparable](stack []T, element T) []T {
 }
 
 func Pop[T comparable](stack []T) ([]T, T) {
-	if len(stack) == 0 {
+	if 0 == len(stack) {
 		var t T
 		return nil, t
 	}
@@ -134,38 +135,38 @@ func Pop[T comparable](stack []T) ([]T, T) {
 	return stack[:last], stack[last]
 }
 
-func Update(stack OperatorStack, operator Operator) (OperatorStack, []Term) {
+func Update(stack OperatorStack, operator Operator) (OperatorStack, []Term, error) {
 	var poppedOperators []Term
-	if len(stack) == 0 || operator == "(" || Peek(stack) == "(" {
-		return Push(stack, operator), poppedOperators
+	if 0 == len(stack) || "(" == operator || "(" == Peek(stack) {
+		return Push(stack, operator), poppedOperators, nil
 	}
 	if ")" == operator {
 		for len(stack) > 0 {
 			tempStack, topOfStack := Pop(stack)
 			stack = tempStack
 			if "(" == topOfStack {
-				return stack, poppedOperators
+				return stack, poppedOperators, nil
 			} else {
 				poppedOperators = append(poppedOperators, Term{Operator: topOfStack, IsOperator: true})
 			}
 		}
-		log.Fatal("Right parenthesis has no matching left parenthesis")
+		return nil, nil, errors.New(INVALID)
 	}
-	if Precedence(operator) > Precedence(Peek(stack)) {
-		return Push(stack, operator), poppedOperators
+	if Precedence(Peek(stack)) < Precedence(operator) {
+		return Push(stack, operator), poppedOperators, nil
 	}
-	for len(stack) > 0 {
+	for 0 < len(stack) {
 		topOfStack := Peek(stack)
 		if Precedence(topOfStack) < Precedence(operator) {
-			return Push(stack, operator), poppedOperators
+			return Push(stack, operator), poppedOperators, nil
 		} else if topOfStack == "(" {
-			return Push(stack, operator), poppedOperators
+			return Push(stack, operator), poppedOperators, nil
 		} else {
 			stack, topOfStack = Pop(stack)
 			poppedOperators = append(poppedOperators, Term{Operator: topOfStack, IsOperator: true})
 		}
 	}
-	return Push(stack, operator), poppedOperators
+	return Push(stack, operator), poppedOperators, nil
 }
 
 func main() {
@@ -207,7 +208,14 @@ func handleAssignment(text string) {
 				}
 				fmt.Println(message)
 			} else {
-				memory[Identifier(assignee)] = expression.Evaluate()
+				memory[Identifier(assignee)], err = expression.Evaluate()
+				if err != nil {
+					message := err.Error()
+					if message == INVALID {
+						message += " assignment"
+					}
+					fmt.Println(message)
+				}
 			}
 		}
 	} else {
@@ -224,34 +232,144 @@ func handleExpression(text string) {
 		}
 		fmt.Println(message)
 	} else if !expression.IsEmpty() {
-		fmt.Println(expression.Evaluate())
+		result, err := expression.Evaluate()
+		if err != nil {
+			message := err.Error()
+			if message == INVALID {
+				message += " expression"
+			}
+			fmt.Println(message)
+		} else {
+			fmt.Println(result)
+		}
 	}
+}
+
+type RawTerm struct {
+	isIdentifier, isValue, isOperator bool
+	Text                              string
+}
+
+func isFinished(last, term RawTerm, char string) (finished bool) {
+	switch {
+	case " " == char:
+		finished = true
+	case term.isValue:
+		_, ok := isNumber(char)
+		finished = !ok
+	case term.isOperator:
+		_, ok := isNumber(char)
+		if ok && (term.Text == "+" || term.Text == "-") {
+			finished = last.isIdentifier || last.isValue
+		} else if strings.HasSuffix(term.Text, "+") || strings.HasSuffix(term.Text, "-") {
+			finished = !(char == "+" || char == "-")
+		} else {
+			finished = true
+		}
+	case term.isIdentifier:
+		finished = !isIdentifier(char)
+	}
+	return
+}
+
+func extend(term RawTerm, char string) (RawTerm, error) {
+	switch {
+	case term.isValue:
+		if _, ok := isNumber(char); ok {
+			term.Text += char
+		} else {
+			return term, errors.New(INVALID)
+		}
+	case term.isOperator:
+		if _, ok := isNumber(char); ok {
+			term.isOperator = false
+			term.isValue = true
+		}
+		term.Text += char
+	case term.isIdentifier:
+		term.Text += char
+	default:
+		if " " == char {
+
+		} else if _, ok := isNumber(char); ok {
+			term.isValue = true
+			term.Text = char
+		} else if _, ok = isOperator(char); ok {
+			term.isOperator = true
+			term.Text = char
+		} else if isIdentifier(char) {
+			term.isIdentifier = true
+			term.Text = char
+		} else {
+			return term, errors.New(INVALID)
+		}
+	}
+	return term, nil
+}
+
+func grow(expression Expression, stack OperatorStack, term RawTerm) (Expression, OperatorStack, error) {
+	if term.isOperator {
+		if operator, ok := isOperator(term.Text); ok {
+			tempStack, poppedOperators, err := Update(stack, operator)
+			if err != nil {
+				return Expression{}, nil, errors.New(INVALID)
+			}
+			stack = tempStack
+			expression.Add(poppedOperators...)
+		} else {
+			return Expression{}, nil, errors.New(INVALID)
+		}
+	} else if term.isValue {
+		if value, ok := isNumber(term.Text); ok {
+			expression.Add(Term{Value: value})
+		} else {
+			return Expression{}, nil, errors.New(INVALID)
+		}
+	} else if term.isIdentifier {
+		if value, ok := memory[Identifier(term.Text)]; ok {
+			expression.Add(Term{Value: value})
+		} else if isIdentifier(term.Text) {
+			return Expression{}, nil, errors.New(UNKNOWN)
+		} else {
+			return Expression{}, nil, errors.New(INVALID)
+		}
+	}
+	return expression, stack, nil
 }
 
 func makeExpression(text string) (Expression, error) {
 	reader := strings.NewReader(text)
 	scanner := bufio.NewScanner(reader)
-	scanner.Split(bufio.ScanWords)
+	scanner.Split(bufio.ScanRunes)
 	expression := Expression{}
 	var stack OperatorStack
+	var rawTerm RawTerm
+	var lastNonemptyRawTerm RawTerm
 	for scanner.Scan() {
-		if value, ok := isNumber(scanner.Text()); ok {
-			expression.Add(Term{Value: value})
-		} else if value, ok = memory[Identifier(scanner.Text())]; ok {
-			expression.Add(Term{Value: value})
-		} else if isIdentifier(scanner.Text()) {
-			return Expression{}, errors.New(UNKNOWN)
-		} else if operator, ok := isOperator(scanner.Text()); ok {
-			tempStack, poppedOperators := Update(stack, operator)
-			stack = tempStack
-			expression.Add(poppedOperators...)
+		if isFinished(lastNonemptyRawTerm, rawTerm, scanner.Text()) {
+			if tempExpression, tempStack, err := grow(expression, stack, rawTerm); err == nil {
+				expression = tempExpression
+				stack = tempStack
+			} else {
+				return tempExpression, err
+			}
+			if rawTerm.isIdentifier || rawTerm.isValue || rawTerm.isOperator {
+				lastNonemptyRawTerm = rawTerm
+			}
+			rawTerm = RawTerm{}
+		}
+		if extended, err := extend(rawTerm, scanner.Text()); err == nil {
+			rawTerm = extended
 		} else {
-			return Expression{}, errors.New(INVALID)
+			return Expression{}, err
 		}
 	}
 
-	if err := scanner.Err(); err != nil {
-		log.Fatal(err)
+	if tempExpression, tempStack, err := grow(expression, stack, rawTerm); err == nil {
+		expression = tempExpression
+		stack = tempStack
+	} else {
+		return tempExpression, err
 	}
 
 	for len(stack) > 0 {
@@ -262,6 +380,7 @@ func makeExpression(text string) (Expression, error) {
 			IsOperator: true,
 		})
 	}
+
 	return expression, nil
 }
 
