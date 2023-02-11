@@ -145,10 +145,6 @@ func (operator Operator) Operate(value1, value2 Value) (result Value, err error)
 	return
 }
 
-func IsEmpty[T comparable](list []T) bool {
-	return len(list) == 0
-}
-
 func (expression *Expression) Evaluate() (Value, error) {
 	var stack ValueStack
 	for _, term := range *expression {
@@ -193,6 +189,10 @@ func Precedence(operator Operator) (precedence int8) {
 	return
 }
 
+func IsEmpty[T comparable](list []T) bool {
+	return len(list) == 0
+}
+
 func Peek[T comparable](stack []T) T {
 	var t T
 	if IsEmpty(stack) {
@@ -215,19 +215,18 @@ func Pop[T comparable](stack []T) ([]T, T) {
 }
 
 func (stack *OperatorStack) Update(operator Operator) (operators []Term, err error) {
-	//var poppedOperators []Term
 	if IsEmpty(*stack) || "(" == operator || "(" == Peek(*stack) {
 		*stack = Push(*stack, operator)
-		return // operators, nil
+		return
 	}
 	if ")" == operator {
 		for !IsEmpty(*stack) {
 			tempStack, topOfStack := Pop(*stack)
 			*stack = tempStack
 			if "(" == topOfStack {
-				return // poppedOperators, nil
+				return
 			} else {
-				operators = append(operators, Term{Operator: topOfStack, IsOperator: true})
+				operators = Push(operators, Term{Operator: topOfStack, IsOperator: true})
 			}
 		}
 		return nil, errors.New(INVALID)
@@ -307,33 +306,33 @@ func extend(term RawTerm, char string) (RawTerm, error) {
 	return term, nil
 }
 
-func grow(expression Expression, stack OperatorStack, term RawTerm) (Expression, OperatorStack, error) {
+func (expression *Expression) Grow(stack OperatorStack, term RawTerm) (OperatorStack, error) {
 	if term.isOperator {
 		if operator, ok := isOperator(term.Text); ok {
 			poppedOperators, err := stack.Update(operator)
 			if err != nil {
-				return Expression{}, nil, errors.New(INVALID)
+				return nil, errors.New(INVALID)
 			}
 			expression.Add(poppedOperators...)
 		} else {
-			return Expression{}, nil, errors.New(INVALID)
+			return nil, errors.New(INVALID)
 		}
 	} else if term.isValue {
 		if value, ok := isNumber(term.Text); ok {
 			expression.Add(Term{Value: value})
 		} else {
-			return Expression{}, nil, errors.New(INVALID)
+			return nil, errors.New(INVALID)
 		}
 	} else if term.isIdentifier {
 		if value, ok := memory[Identifier(term.Text)]; ok {
 			expression.Add(Term{Value: value})
 		} else if isIdentifier(term.Text) {
-			return Expression{}, nil, errors.New(UNKNOWN)
+			return nil, errors.New(UNKNOWN)
 		} else {
-			return Expression{}, nil, errors.New(INVALID)
+			return nil, errors.New(INVALID)
 		}
 	}
-	return expression, stack, nil
+	return stack, nil
 }
 
 func makeExpression(text string) (Expression, error) {
@@ -346,11 +345,10 @@ func makeExpression(text string) (Expression, error) {
 	var lastNonemptyRawTerm RawTerm
 	for scanner.Scan() {
 		if isFinished(lastNonemptyRawTerm, rawTerm, scanner.Text()) {
-			if tempExpression, tempStack, err := grow(expression, stack, rawTerm); err == nil {
-				expression = tempExpression
+			if tempStack, err := expression.Grow(stack, rawTerm); err == nil {
 				stack = tempStack
 			} else {
-				return tempExpression, err
+				return expression, err
 			}
 			if rawTerm.isIdentifier || rawTerm.isValue || rawTerm.isOperator {
 				lastNonemptyRawTerm = rawTerm
@@ -364,11 +362,10 @@ func makeExpression(text string) (Expression, error) {
 		}
 	}
 
-	if tempExpression, tempStack, err := grow(expression, stack, rawTerm); err == nil {
-		expression = tempExpression
+	if tempStack, err := expression.Grow(stack, rawTerm); err == nil {
 		stack = tempStack
 	} else {
-		return tempExpression, err
+		return expression, err
 	}
 
 	for len(stack) > 0 {
