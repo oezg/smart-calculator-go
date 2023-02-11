@@ -195,7 +195,7 @@ func Precedence(operator Operator) (precedence int8) {
 
 func Peek[T comparable](stack []T) T {
 	var t T
-	if len(stack) == 0 {
+	if IsEmpty(stack) {
 		return t
 	}
 	return stack[len(stack)-1]
@@ -206,7 +206,7 @@ func Push[T comparable](stack []T, element T) []T {
 }
 
 func Pop[T comparable](stack []T) ([]T, T) {
-	if 0 == len(stack) {
+	if IsEmpty(stack) {
 		var t T
 		return nil, t
 	}
@@ -214,40 +214,40 @@ func Pop[T comparable](stack []T) ([]T, T) {
 	return stack[:last], stack[last]
 }
 
-func (stack *OperatorStack) Update(operator Operator) ([]Term, error) {
-	var poppedOperators []Term
-	if 0 == len(*stack) || "(" == operator || "(" == Peek(*stack) {
+func (stack *OperatorStack) Update(operator Operator) (operators []Term, err error) {
+	//var poppedOperators []Term
+	if IsEmpty(*stack) || "(" == operator || "(" == Peek(*stack) {
 		*stack = Push(*stack, operator)
-		return poppedOperators, nil
+		return // operators, nil
 	}
 	if ")" == operator {
-		for len(*stack) > 0 {
+		for !IsEmpty(*stack) {
 			tempStack, topOfStack := Pop(*stack)
 			*stack = tempStack
 			if "(" == topOfStack {
-				return poppedOperators, nil
+				return // poppedOperators, nil
 			} else {
-				poppedOperators = append(poppedOperators, Term{Operator: topOfStack, IsOperator: true})
+				operators = append(operators, Term{Operator: topOfStack, IsOperator: true})
 			}
 		}
 		return nil, errors.New(INVALID)
 	}
 	if Precedence(Peek(*stack)) < Precedence(operator) {
 		*stack = Push(*stack, operator)
-		return poppedOperators, nil
+		return operators, nil
 	}
 	for 0 < len(*stack) {
 		topOfStack := Peek(*stack)
 		if "(" == topOfStack || Precedence(topOfStack) < Precedence(operator) {
 			*stack = Push(*stack, operator)
-			return poppedOperators, nil
+			return operators, nil
 		} else {
 			*stack, topOfStack = Pop(*stack)
-			poppedOperators = append(poppedOperators, Term{Operator: topOfStack, IsOperator: true})
+			operators = append(operators, Term{Operator: topOfStack, IsOperator: true})
 		}
 	}
 	*stack = Push(*stack, operator)
-	return poppedOperators, nil
+	return operators, nil
 }
 
 func isFinished(last, term RawTerm, char string) (finished bool) {
