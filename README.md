@@ -17,5 +17,5 @@ See [Reverse Polish Notation](https://en.wikipedia.org/wiki/Reverse_Polish_notat
 - clear all variables from memory
 
 ## Example
-`3 + 8 * ((4 + 3) * 2 + 1) - 6 / (2 + 1)`
+`3 + 8 * ((4 + 3) * 2 + 1) - 6 / (2 + 1)`   =>
 121
