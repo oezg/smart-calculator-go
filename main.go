@@ -4,8 +4,10 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"unicode"
@@ -15,14 +17,19 @@ const (
 	UNKNOWN = "Unknown variable"
 	INVALID = "Invalid "
 	EMPTY   = "empty expression"
-	HELP    = `Smart calculator can save values to variables
-and calculate the value of arithmetic expressions.
-The supported operations are assignment '=', parenthesis '()', addition '+', 
-subtraction '-', multiplication '*', integer division '/', 
-modulo '%' and exponent '^'. 
-Variable names can only have Latin characters but no digits or special characters.
-Smart calculator works only with integers and not with floating point numbers.
-Type "/exit" to end the program`
+	HELP    = `Smart calculator commands:
+/vars	prints variables
+/del	deletes variables (space separated)
+/read	reads given file and updates variables
+/write	writes variables to given file
+/help	prints help
+/exit	exits program
+
+Smart calculator operations:
+(   )   +   -   *   /   %   ^
+
+Smart calculator supports only Latin characters for variables
+Smart calculator supports only integers for numerical types.`
 )
 
 var memory = make(map[Identifier]Value)
@@ -48,6 +55,8 @@ type RawTerm struct {
 }
 
 func main() {
+	fmt.Println("+-+-+   Welcome to Smart Calculator   */*/*")
+	fmt.Println("Enter a command or start calculation or type '/help'")
 	scanner := bufio.NewScanner(os.Stdin)
 	for scanner.Scan() {
 		handleCommand(scanner.Text())
@@ -55,18 +64,37 @@ func main() {
 }
 
 func handleCommand(text string) {
-	if strings.HasPrefix(text, "/") {
-		switch text[1:] {
-		case "exit":
-			fmt.Println("Bye!")
-			os.Exit(0)
-		case "help":
-			fmt.Println(HELP)
-		default:
-			fmt.Println("Unknown command")
-		}
-	} else {
+	if !strings.HasPrefix(text, "/") {
 		handleAssignment(text)
+		return
+	}
+	commands := strings.SplitN(text[1:], " ", 2)
+	command := commands[0]
+	switch command {
+	case "exit":
+		fmt.Println("Bye!")
+		os.Exit(0)
+	case "help":
+		fmt.Println(HELP)
+	case "vars":
+		printVariables(os.Stdout)
+	case "del":
+		if IsEmpty(commands[1:]) {
+			return
+		}
+		deleteVariables(commands[1])
+	case "read":
+		if IsEmpty(commands[1:]) {
+			return
+		}
+		readVariables(commands[1])
+	case "write":
+		if IsEmpty(commands[1:]) {
+			return
+		}
+		writeVariables(commands[1])
+	default:
+		fmt.Println("Unknown command")
 	}
 }
 
@@ -410,4 +438,62 @@ func printError(message, statement string) {
 		message += statement
 	}
 	fmt.Println(message)
+}
+
+func sortVariables() (identifiers []Identifier) {
+	identifiers = make([]Identifier, 0, len(memory))
+	for identifier := range memory {
+		identifiers = Push(identifiers, identifier)
+	}
+	sort.Slice(identifiers, func(i, j int) bool {
+		return identifiers[i] < identifiers[j]
+	})
+	return
+}
+
+func printVariables(writer io.Writer) {
+	for _, identifier := range sortVariables() {
+		_, err := fmt.Fprintf(writer, "%s = %d\n", identifier, memory[identifier])
+		if err != nil {
+			fmt.Println(err)
+		}
+	}
+}
+
+func deleteVariables(text string) {
+	arguments := strings.Split(text, " ")
+	for _, variable := range arguments {
+		delete(memory, Identifier(variable))
+	}
+}
+
+func readVariables(text string) {
+	file, err := os.Open(text)
+	if err != nil {
+		fmt.Println(err)
+	}
+	defer func(file *os.File) {
+		err := file.Close()
+		if err != nil {
+			fmt.Println(err)
+		}
+	}(file)
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		handleAssignment(scanner.Text())
+	}
+}
+
+func writeVariables(text string) {
+	file, err := os.Create(text)
+	if err != nil {
+		fmt.Println(err)
+	}
+	defer func(file *os.File) {
+		err := file.Close()
+		if err != nil {
+			fmt.Println(err)
+		}
+	}(file)
+	printVariables(file)
 }
