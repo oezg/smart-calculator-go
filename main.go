@@ -14,12 +14,13 @@ import (
 )
 
 const (
-	UNKNOWN = "Unknown variable"
+	UNKNOWN = "Unknown variable "
 	INVALID = "Invalid "
 	EMPTY   = "empty expression"
 	HELP    = `Smart calculator commands:
 /vars	prints variables
 /del	deletes variables (space separated)
+/con	converts infix to postfix notation
 /read	reads given file and updates variables
 /write	writes variables to given file
 /help	prints help
@@ -78,6 +79,11 @@ func handleCommand(text string) {
 		fmt.Println(HELP)
 	case "vars":
 		printVariables(os.Stdout)
+	case "con":
+		if IsEmpty(commands[1:]) {
+			return
+		}
+		convertExpression(commands[1])
 	case "del":
 		if IsEmpty(commands[1:]) {
 			return
@@ -128,14 +134,14 @@ func handleExpression(text string) {
 
 func evaluateExpression(text string) (value Value, err error) {
 	var expression Expression
-	if expression, err = makeExpression(text); err != nil {
+	if expression, err = convert2Postfix(text); err != nil {
 		return
 	}
 	value, err = expression.Evaluate()
 	return
 }
 
-func makeExpression(text string) (expression Expression, err error) {
+func convert2Postfix(text string) (expression Expression, err error) {
 	if 0 == len(text) {
 		err = errors.New(EMPTY)
 		return
@@ -216,6 +222,18 @@ func (expression *Expression) Grow(stack *OperatorStack, term Term) error {
 		expression.Add(term)
 	}
 	return nil
+}
+
+func (expression *Expression) String() string {
+	terms := make([]string, 0, len(*expression))
+	for _, term := range *expression {
+		if term.IsOperator {
+			terms = Push(terms, string(term.Operator))
+		} else {
+			terms = Push(terms, strconv.Itoa(int(term.Value)))
+		}
+	}
+	return strings.Join(terms, " ")
 }
 
 func (operator Operator) Operate(value1, value2 Value) (result Value) {
@@ -496,4 +514,14 @@ func writeVariables(text string) {
 		}
 	}(file)
 	printVariables(file)
+}
+
+func convertExpression(text string) {
+	infixExpression := strings.TrimSpace(text)
+	postfixExpression, err := convert2Postfix(infixExpression)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	fmt.Println(postfixExpression.String())
 }
