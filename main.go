@@ -18,6 +18,7 @@ const (
 	INVALID = "Invalid "
 	EMPTY   = "empty expression"
 	HELP    = `Smart calculator commands:
+/clear	clears all variables
 /vars	prints variables
 /del	deletes variables (space separated)
 /con	converts infix to postfix notation
@@ -79,6 +80,8 @@ func handleCommand(text string) {
 		fmt.Println(HELP)
 	case "vars":
 		printVariables(os.Stdout)
+	case "clear":
+		memory = make(map[Identifier]Value)
 	case "con":
 		if IsEmpty(commands[1:]) {
 			return
