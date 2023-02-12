@@ -124,7 +124,7 @@ func makeExpression(text string) (expression Expression, err error) {
 			if term, err = validate(currentTerm); err != nil {
 				return
 			}
-			if stack, err = expression.Grow(stack, term); err != nil {
+			if err = expression.Grow(&stack, term); err != nil {
 				return
 			}
 			lastTerm, currentTerm = currentTerm, RawTerm{}
@@ -136,7 +136,7 @@ func makeExpression(text string) (expression Expression, err error) {
 	if term, err = validate(currentTerm); err != nil {
 		return
 	}
-	if stack, err = expression.Grow(stack, term); err != nil {
+	if err = expression.Grow(&stack, term); err != nil {
 		return
 	}
 	for !IsEmpty(stack) {
@@ -177,17 +177,17 @@ func (expression *Expression) Add(terms ...Term) {
 	}
 }
 
-func (expression *Expression) Grow(stack OperatorStack, term Term) (OperatorStack, error) {
+func (expression *Expression) Grow(stack *OperatorStack, term Term) error {
 	if term.IsOperator {
 		poppedOperators, err := stack.Update(term.Operator)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		expression.Add(poppedOperators...)
 	} else {
 		expression.Add(term)
 	}
-	return stack, nil
+	return nil
 }
 
 func (operator Operator) Operate(value1, value2 Value) (result Value) {
