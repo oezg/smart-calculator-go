@@ -137,14 +137,14 @@ func handleExpression(text string) {
 
 func evaluateExpression(text string) (value Value, err error) {
 	var expression Expression
-	if expression, err = convert2Postfix(text); err != nil {
+	if expression, err = convertToPostfix(text); err != nil {
 		return
 	}
 	value, err = expression.Evaluate()
 	return
 }
 
-func convert2Postfix(text string) (expression Expression, err error) {
+func convertToPostfix(text string) (expression Expression, err error) {
 	if 0 == len(text) {
 		err = errors.New(EMPTY)
 		return
@@ -521,7 +521,7 @@ func writeVariables(text string) {
 
 func convertExpression(text string) {
 	infixExpression := strings.TrimSpace(text)
-	postfixExpression, err := convert2Postfix(infixExpression)
+	postfixExpression, err := convertToPostfix(infixExpression)
 	if err != nil {
 		fmt.Println(err)
 		return
