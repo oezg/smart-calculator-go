@@ -19,9 +19,9 @@ const (
 	EMPTY   = "empty expression"
 	HELP    = `Smart calculator commands:
 /clear	clears all variables
-/vars	prints variables
-/del	deletes variables (space separated)
-/con	converts infix to postfix notation
+/vars	prints all variables
+/del	deletes given variables (space separated)
+/con	converts given expression to postfix notation
 /read	reads given file and updates variables
 /write	writes variables to given file
 /help	prints help
