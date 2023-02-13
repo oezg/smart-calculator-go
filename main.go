@@ -365,7 +365,7 @@ func (term *RawTerm) Close(last RawTerm, char string) {
 	case term.isOperator:
 		_, ok := isNumber(char)
 		if ok && (term.Text == "+" || term.Text == "-") {
-			term.closed = last.isIdentifier || last.isValue
+			term.closed = last.isIdentifier || last.isValue || last.isOperator && last.Text == ")"
 		} else if strings.HasSuffix(term.Text, "+") || strings.HasSuffix(term.Text, "-") {
 			term.closed = !(char == "+" || char == "-")
 		} else {
@@ -405,7 +405,7 @@ func (term *RawTerm) Extend(char string) (err error) {
 func isNumber(text string) (Value, bool) {
 	number, err := strconv.Atoi(text)
 	if err != nil {
-		return Value(0), false
+		return Value(number), false
 	}
 	return Value(number), true
 }
