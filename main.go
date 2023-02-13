@@ -200,6 +200,7 @@ func (expression *Expression) Evaluate() (value Value, err error) {
 		stack, value2 = Pop(stack)
 		if stack == nil {
 			err = errors.New(INVALID)
+			return
 		}
 		result = term.Operator.Operate(value2, value1)
 		stack = Push(stack, result)
@@ -320,7 +321,7 @@ func Pop[T comparable](stack []T) ([]T, T) {
 }
 
 func (stack *OperatorStack) Update(operator Operator) (operators []Term, err error) {
-	if IsEmpty(*stack) || "(" == operator || "(" == Peek(*stack) {
+	if IsEmpty(*stack) || "(" == operator {
 		*stack = Push(*stack, operator)
 		return
 	}
